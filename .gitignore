@@ -1,0 +1,40 @@
+# Local secrets and credentials
+.env
+.env.*
+env/
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Runtime data, broker state, and generated research outputs
+blog/
+data/
+github/
+backtests/
+output/
+reports/
+research/
+notes/
+tmp/
+
+# Concrete LaunchAgent files contain local absolute paths.
+# Keep only sanitized *.plist.template files in git.
+config/*.plist
+!config/**/*.plist.template
+
+# Frontend/build/runtime artifacts
+ibkr-monitor-prototype/node_modules/
+ibkr-monitor-prototype/dist/
+ibkr-monitor-prototype/tmp/
+ibkr-monitor-prototype/.playwright-cli/
+
+# Python/tool caches
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.playwright-cli/
+
+.DS_Store

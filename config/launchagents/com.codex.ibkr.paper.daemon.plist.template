@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.codex.ibkr.paper.daemon</string>
+
+  <key>WorkingDirectory</key>
+  <string>__REPO_DIR__</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>__PYTHON__</string>
+    <string>-u</string>
+    <string>__REPO_DIR__/scripts/ibkr_paper_daemon.py</string>
+    <string>--duration-hours</string>
+    <string>0</string>
+    <string>--interval-seconds</string>
+    <string>900</string>
+    <string>--trade-interval-seconds</string>
+    <string>900</string>
+    <string>--state-snapshot-interval-seconds</string>
+    <string>3600</string>
+    <string>--full-bar-interval-seconds</string>
+    <string>3600</string>
+    <string>--overlay-interval-seconds</string>
+    <string>3600</string>
+    <string>--client-id-base</string>
+    <string>2600</string>
+    <string>--expected-account</string>
+    <string>__IBKR_PAPER_ACCOUNT__</string>
+  </array>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>IBKR_EXPECTED_ACCOUNT</key>
+    <string>__IBKR_PAPER_ACCOUNT__</string>
+  </dict>
+
+  <key>StandardOutPath</key>
+  <string>__REPO_DIR__/output/ibkr_paper_daemon/launchd.stdout.log</string>
+  <key>StandardErrorPath</key>
+  <string>__REPO_DIR__/output/ibkr_paper_daemon/launchd.stderr.log</string>
+
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+</dict>
+</plist>

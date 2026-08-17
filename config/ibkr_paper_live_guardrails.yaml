@@ -1,0 +1,102 @@
+account:
+  base_currency: USD
+  reference_capital_usd: 500000
+  recommended_live_start_model_scale: 0.25
+  max_live_model_scale_before_manual_approval: 0.50
+
+margin_guards:
+  warning_projected_margin_to_equity: 0.60
+  hard_block_projected_margin_to_equity: 0.80
+  hard_block_stressed_margin_multiplier: 2.00
+  hard_block_stressed_margin_to_equity: 1.00
+  max_single_instrument_margin_to_equity_initial_live: 0.10
+
+contract_guards:
+  roll_window_calendar_days: 14
+  max_contract_file_age_hours: 24
+
+execution_retry:
+  cooldown_seconds: 3600
+  max_attempts_per_target_instrument: 3
+
+capital_thresholds_1x_model_usd:
+  current_margin:
+    min_no_forced_scaling: 372240
+    max_margin_le_80pct: 482410
+    p95_margin_le_50pct: 730869
+  margin_1_5x:
+    min_no_forced_scaling: 607121
+    max_margin_le_80pct: 796677
+    p95_margin_le_50pct: 1151090
+  margin_2x:
+    min_no_forced_scaling: 859863
+    max_margin_le_80pct: 1112606
+    p95_margin_le_50pct: 1580259
+  margin_3x:
+    min_no_forced_scaling: 1370220
+    max_margin_le_80pct: 1758650
+    p95_margin_le_50pct: 2435422
+
+paper_phases:
+  - name: read_only_dry_run
+    trading_days: 5
+    transmit_orders: false
+    model_scale: 1.00
+  - name: paper_025x
+    trading_days: 10
+    transmit_orders: true
+    model_scale: 0.25
+  - name: paper_050x
+    trading_days: 10
+    transmit_orders: true
+    model_scale: 0.50
+  - name: paper_1x
+    trading_days: 20
+    transmit_orders: true
+    model_scale: 1.00
+
+execution_blocks:
+  stale_daily_data_max_trading_days: 1
+  require_contract_qualification: true
+  require_position_reconciliation: true
+  require_market_data_subscription_or_disable_instrument: true
+  block_order_transmission_until_live_market_data_gate_passes: true
+  require_roll_calendar: true
+  block_physical_delivery_closeout_window: true
+
+market_data_gate:
+  delayed_data_gate_status: pass
+  live_subscription_gate_status: fail
+  latest_delayed_gate_file: output/ibkr_market_data_gate/all_40_delayed_market_data.csv
+  latest_live_gate_file: output/ibkr_market_data_gate/sample_live_market_data.csv
+  latest_15min_historical_gate_file: output/ibkr_market_data_gate/all_40_15min_historical.csv
+  common_live_error_code: 354
+  common_live_error: Requested market data is not subscribed.
+
+paper_market_order_override:
+  enabled: true
+  paper_port: 4002
+  order_type: MARKET
+  bypass_live_subscription_gate_if_15min_gate_passes: true
+  allow_disabled_until_verified_if_15min_gate_passes: true
+  historical_bar_gate_file: output/ibkr_market_data_gate/all_40_15min_historical.csv
+  required_bar_size: 15 mins
+  gate_scope: nonzero_targets
+  min_bar_count: 1
+  max_last_bar_age_calendar_days: 2
+
+manual_review_triggers:
+  daily_loss_to_netliq: -0.03
+  five_day_loss_to_netliq: -0.07
+  broker_vs_local_margin_difference: 0.15
+  any_order_rejection: true
+  unexpected_partial_fill: true
+  wrong_contract_month_fill: true
+
+disabled_until_verified:
+  - IRON
+  - ETHANOL
+  - KR3
+  - KR10
+  - JGB-SGX-mini
+  - CNH

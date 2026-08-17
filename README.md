@@ -43,6 +43,108 @@ The neural-network and stock alpha modules are forecast research only. They do
 not set leverage, capital allocation, volatility target, instrument weights, or
 execution rules directly.
 
+## Trading Flow
+
+The system has two separate flows: an offline research/engine flow that produces
+target positions, and a broker adapter flow that decides whether those targets
+are safe to execute in an IBKR paper account.
+
+### 1. Research To Target Positions
+
+```mermaid
+flowchart TD
+    Prices["Historical prices, contracts, and universe files"]
+    Audit{"Data audit passes?"}
+    Forecast["Generate forecasts: EWMAC, breakout, carry, or research alpha"]
+    Cap["Scale and cap forecasts to Rob-style range"]
+    Vol["Estimate instrument volatility from prior data"]
+    Risk["Compute instrument risk, weights, IDM/FDM, and risk target"]
+    Buffer["Apply buffers and convert to integer contracts"]
+    Manifest["Write target positions + business date + universe + SHA256"]
+    Reject["Stop: mark research output unusable"]
+
+    Prices --> Audit
+    Audit -- "no" --> Reject
+    Audit -- "yes" --> Forecast
+    Forecast --> Cap
+    Cap --> Vol
+    Vol --> Risk
+    Risk --> Buffer
+    Buffer --> Manifest
+```
+
+The research path never connects to IBKR. Its job is to answer what the strategy
+would like to hold, not whether the broker account can trade it right now.
+
+### 2. Paper Execution Decision Tree
+
+```mermaid
+flowchart TD
+    Tick["Daemon tick or manual paper run"]
+    AccountInput{"Expected paper account provided?"}
+    Connect{"IBKR API connected on paper port?"}
+    AccountMatch{"Connected account matches expected account?"}
+    TargetOK{"Target manifest date, SHA256, and universe valid?"}
+    ContractsOK{"Contracts qualified and tradable?"}
+    DataFresh{"Required market data fresh enough?"}
+    Reconcile{"Current broker positions loaded?"}
+    MarginOK{"Projected margin and guardrails pass?"}
+    Delta{"Actionable position delta after buffer?"}
+    Confirm{"Paper execution flags present?"}
+    DryRun["Record dry run only"]
+    Execute["Submit paper market orders"]
+    Persist["Persist orders, fills, NAV, positions, and bar data locally"]
+    Monitor["Read-only monitor displays state and gate reasons"]
+    Block["Block trading and record reason"]
+    Collect["Collect data and wait for next cycle"]
+
+    Tick --> AccountInput
+    AccountInput -- "no" --> Block
+    AccountInput -- "yes" --> Connect
+    Connect -- "no" --> Block
+    Connect -- "yes" --> AccountMatch
+    AccountMatch -- "no" --> Block
+    AccountMatch -- "yes" --> TargetOK
+    TargetOK -- "no" --> Block
+    TargetOK -- "yes" --> ContractsOK
+    ContractsOK -- "no" --> Block
+    ContractsOK -- "yes" --> DataFresh
+    DataFresh -- "no" --> Collect
+    DataFresh -- "yes" --> Reconcile
+    Reconcile -- "no" --> Block
+    Reconcile -- "yes" --> MarginOK
+    MarginOK -- "no" --> Block
+    MarginOK -- "yes" --> Delta
+    Delta -- "no" --> Persist
+    Delta -- "yes" --> Confirm
+    Confirm -- "no" --> DryRun
+    Confirm -- "yes" --> Execute
+    DryRun --> Persist
+    Execute --> Persist
+    Persist --> Monitor
+    Block --> Monitor
+    Collect --> Monitor
+```
+
+The adapter is deliberately conservative. A stale target file, wrong account,
+missing data, failed contract qualification, margin breach, or missing
+confirmation flag results in no order.
+
+### 3. Runtime Cadence
+
+```mermaid
+flowchart LR
+    Daily["Daily: refresh research data and target files"]
+    Fifteen["Every 15 min: collect IBKR bars and evaluate gates"]
+    Hourly["Hourly: store account/NAV/position snapshot"]
+    UI["Monitor: show NAV, positions, P&L, prices, and gate status"]
+
+    Daily --> Fifteen
+    Fifteen --> Hourly
+    Hourly --> UI
+    Fifteen --> UI
+```
+
 ## Repository Map
 
 ```text

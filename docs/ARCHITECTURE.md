@@ -118,7 +118,126 @@ flowchart TD
     PriceDB --> Monitor
 ```
 
-## 6. Directory Policy
+## 6. Trading Decision Flow
+
+There are two decision systems. The first is the strategy engine that decides
+target positions. The second is the IBKR adapter that decides whether the
+targets may be sent to a paper account.
+
+### 6.1 Strategy Engine Decisions
+
+```mermaid
+flowchart TD
+    A["Price history and instrument metadata"]
+    B{"Enough clean history?"}
+    C["Generate raw rule forecasts"]
+    D["Apply forecast scalar and cap"]
+    E["Combine forecast rules"]
+    F["Estimate volatility using prior data only"]
+    G["Compute risk-adjusted position"]
+    H["Apply instrument weights and IDM/FDM"]
+    I["Apply buffer / reduce churn"]
+    J["Round to integer contracts"]
+    K["Write target file and manifest"]
+    X["No target: instrument excluded or frozen"]
+
+    A --> B
+    B -- "no" --> X
+    B -- "yes" --> C
+    C --> D
+    D --> E
+    E --> F
+    F --> G
+    G --> H
+    H --> I
+    I --> J
+    J --> K
+```
+
+Important boundary: the engine can output positive, negative, or zero integer
+targets, but it does not know about open IBKR orders, fills, current account
+cash, or API connection state.
+
+### 6.2 IBKR Adapter Decisions
+
+```mermaid
+flowchart TD
+    Start["Paper daemon cycle"]
+    Expected{"Expected account supplied?"}
+    Api{"IBKR API connected?"}
+    Paper{"Connected account is expected paper account?"}
+    Target{"Target manifest current and verified?"}
+    Universe{"Target universe matches production contract list?"}
+    Contracts{"Contracts qualified?"}
+    Data{"Market data gate passes?"}
+    Positions{"Broker positions downloaded?"}
+    Delta{"Target minus current position creates action?"}
+    Margin{"Projected margin within guardrails?"}
+    Flags{"Execution confirmation flags present?"}
+    Submit["Submit paper market orders"]
+    Save["Persist local state and monitor export"]
+    Dry["Dry run / no transmission"]
+    Block["Block and record gate reason"]
+
+    Start --> Expected
+    Expected -- "no" --> Block
+    Expected -- "yes" --> Api
+    Api -- "no" --> Block
+    Api -- "yes" --> Paper
+    Paper -- "no" --> Block
+    Paper -- "yes" --> Target
+    Target -- "no" --> Block
+    Target -- "yes" --> Universe
+    Universe -- "no" --> Block
+    Universe -- "yes" --> Contracts
+    Contracts -- "no" --> Block
+    Contracts -- "yes" --> Data
+    Data -- "no" --> Block
+    Data -- "yes" --> Positions
+    Positions -- "no" --> Block
+    Positions -- "yes" --> Delta
+    Delta -- "no" --> Save
+    Delta -- "yes" --> Margin
+    Margin -- "no" --> Block
+    Margin -- "yes" --> Flags
+    Flags -- "no" --> Dry
+    Flags -- "yes" --> Submit
+    Submit --> Save
+    Dry --> Save
+    Block --> Save
+```
+
+Adapter decisions are deliberately operational. They should not change the
+forecast, the volatility target, or the portfolio construction logic.
+
+### 6.3 Local State Outputs
+
+```mermaid
+flowchart LR
+    IBKR["IBKR paper API"]
+    Bars["15m historical bars"]
+    Account["Account values / NAV"]
+    Positions["Broker positions"]
+    Orders["Orders and fills"]
+    SQLite["Local SQLite"]
+    JSON["Monitor JSON export"]
+    UI["Read-only monitor"]
+
+    IBKR --> Bars
+    IBKR --> Account
+    IBKR --> Positions
+    IBKR --> Orders
+    Bars --> SQLite
+    Account --> SQLite
+    Positions --> SQLite
+    Orders --> SQLite
+    SQLite --> JSON
+    JSON --> UI
+```
+
+Runtime state is not a research input and is not committed to git.
+
+## 7. Directory Policy
 
 Committed:
 
@@ -139,7 +258,7 @@ Ignored/local-only:
 - cloned upstream repos
 - node modules and build output
 
-## 7. Operational Rule
+## 8. Operational Rule
 
 If a file can reveal account identity, API keys, local machine paths, broker
 orders, fills, NAV, or private runtime state, it should be local-only unless it

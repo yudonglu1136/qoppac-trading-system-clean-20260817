@@ -19,6 +19,12 @@ function number(value, fallback = 0) {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+function hasNumber(value) {
+  if (value === null || value === undefined || value === "") return false;
+  const parsed = Number(value);
+  return Number.isFinite(parsed);
+}
+
 function money(value, digits = 0) {
   const amount = number(value);
   return new Intl.NumberFormat("en-US", {
@@ -29,6 +35,10 @@ function money(value, digits = 0) {
   }).format(amount);
 }
 
+function moneyOrDash(value, digits = 0) {
+  return hasNumber(value) ? money(value, digits) : "-";
+}
+
 function compact(value, digits = 0) {
   return new Intl.NumberFormat("en-US", {
     maximumFractionDigits: digits,
@@ -36,8 +46,16 @@ function compact(value, digits = 0) {
   }).format(number(value));
 }
 
+function compactOrDash(value, digits = 0) {
+  return hasNumber(value) ? compact(value, digits) : "-";
+}
+
 function pct(value, digits = 2) {
   return `${(number(value) * 100).toFixed(digits)}%`;
+}
+
+function pctOrDash(value, digits = 2) {
+  return hasNumber(value) ? pct(value, digits) : "-";
 }
 
 function niceTime(value) {
@@ -56,6 +74,35 @@ function directionClass(direction) {
   if (direction === "LONG") return "long";
   if (direction === "SHORT") return "short";
   return "flat";
+}
+
+function isLocked(row) {
+  return Boolean(row?.positionLockedByGuardrail || row?.positionBreak);
+}
+
+function isExitOnly(row) {
+  return Boolean(row?.positionExitOnly || row?.instrumentExitOnly || row?.riskPolicy === "EXIT_ONLY");
+}
+
+function rowStatusTitle(row) {
+  const parts = [];
+  if (isLocked(row)) parts.push("Position locked: broker and local position reconciliation required");
+  if (isExitOnly(row)) parts.push("Exit only: may reduce or close; cannot open, add, or reverse");
+  if (row?.instrumentDataStatus) parts.push(`Data status: ${row.instrumentDataStatus}`);
+  if (row?.instrumentLatestAdjustedDate) parts.push(`Latest adjusted: ${row.instrumentLatestAdjustedDate}`);
+  if (row?.forecastDate) parts.push(`Forecast date: ${row.forecastDate}`);
+  if (hasNumber(row?.ignoredForecast)) parts.push(`Ignored forecast: ${compact(row.ignoredForecast, 2)}`);
+  if (row?.forecastIgnoredReason) parts.push(`Forecast ignored: ${row.forecastIgnoredReason}`);
+  if (row?.instrumentDataReasons?.length) parts.push(`Reasons: ${row.instrumentDataReasons.join(", ")}`);
+  return parts.join("\n");
+}
+
+function forecastNote(row) {
+  if (isExitOnly(row)) return "exit only";
+  if (row?.forecastIgnored) return "ignored";
+  if (isLocked(row)) return "locked";
+  if (row?.instrumentDataStatus && row.instrumentDataStatus !== "PASS") return String(row.instrumentDataStatus).toLowerCase();
+  return "";
 }
 
 function pathFrom(points) {
@@ -84,6 +131,17 @@ function filterByRange(rows, range) {
   return filtered.length >= 2 ? filtered : rows.slice(-Math.min(rows.length, 2));
 }
 
+function sortByChartDate(rows) {
+  return [...(rows || [])].sort((left, right) => {
+    const leftDate = parseChartDate(left);
+    const rightDate = parseChartDate(right);
+    if (!leftDate && !rightDate) return 0;
+    if (!leftDate) return 1;
+    if (!rightDate) return -1;
+    return leftDate.getTime() - rightDate.getTime();
+  });
+}
+
 function scalePoints(rows, valueKey, width, height, padding = 28) {
   const values = rows.map((row) => number(row[valueKey], NaN)).filter(Number.isFinite);
   if (values.length === 0) return [];
@@ -95,6 +153,27 @@ function scalePoints(rows, valueKey, width, height, padding = 28) {
     const y = height - padding - ((number(row[valueKey]) - min) / span) * (height - padding * 2);
     return { ...row, x, y };
   });
+}
+
+function scaleTimePoints(rows, valueKey, width, height, padding = 28) {
+  const datedRows = rows
+    .map((row) => ({ row, date: parseChartDate(row) }))
+    .filter((item) => item.date && Number.isFinite(number(item.row[valueKey], NaN)));
+  if (datedRows.length !== rows.length || datedRows.length < 2) {
+    return scalePoints(rows, valueKey, width, height, padding);
+  }
+  const values = datedRows.map((item) => number(item.row[valueKey]));
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const valueSpan = max - min || Math.max(Math.abs(max), 1);
+  const firstTime = datedRows[0].date.getTime();
+  const lastTime = datedRows[datedRows.length - 1].date.getTime();
+  const timeSpan = lastTime - firstTime || 1;
+  return datedRows.map(({ row, date }) => ({
+    ...row,
+    x: padding + ((date.getTime() - firstTime) / timeSpan) * (width - padding * 2),
+    y: height - padding - ((number(row[valueKey]) - min) / valueSpan) * (height - padding * 2),
+  }));
 }
 
 function MiniNavChart({ rows }) {
@@ -175,10 +254,10 @@ function InstrumentChart({ instrument, series, position, orders }) {
   const width = 690;
   const height = 252;
   const [hoverIndex, setHoverIndex] = useState(null);
-  const cleanRows = filterByRange(series || [], range).filter((row) => Number.isFinite(number(row.price, NaN)));
-  const pricePoints = scalePoints(cleanRows, "price", width, height, 30);
+  const cleanRows = filterByRange(sortByChartDate(series), range).filter((row) => Number.isFinite(number(row.price, NaN)));
+  const pricePoints = scaleTimePoints(cleanRows, "price", width, height, 30);
   const forecastRows = cleanRows.map((row) => ({ ...row, forecastScaled: number(row.forecast, 0) }));
-  const forecastPoints = scalePoints(forecastRows, "forecastScaled", width, height, 30);
+  const forecastPoints = scaleTimePoints(forecastRows, "forecastScaled", width, height, 30);
   const hovered = hoverIndex === null ? null : pricePoints[Math.min(hoverIndex, Math.max(pricePoints.length - 1, 0))];
   const selectedOrders = orders.filter((order) => order.instrument === instrument).slice(0, 5);
 
@@ -226,12 +305,12 @@ function InstrumentChart({ instrument, series, position, orders }) {
           <b>{hovered.date}</b>
           <span>Instrument <strong>{instrument}</strong></span>
           <span>Price <strong>{compact(hovered.price, 4)}</strong></span>
-          <span>Forecast <strong>{compact(hovered.forecast, 2)}</strong></span>
+          <span>Forecast <strong>{compactOrDash(hovered.forecast, 2)}</strong></span>
       <span>Position <strong>{compact(position?.position || 0)} contracts</strong></span>
           <span>Target <strong>{compact(position?.target || 0)} contracts</strong></span>
           <span>Execution <strong className={hovered.action === "SHORT" ? "short-text" : "long-text"}>{hovered.action === "LONG" ? "Buy" : hovered.action === "SHORT" ? "Sell" : "None"}</strong></span>
           <span>NAV <strong>{money(position?.nav || 0)}</strong></span>
-          <span>Unrealized P&L <strong>{money(position?.unrealizedPnl || 0)}</strong></span>
+          <span>Unrealized P&L <strong>{moneyOrDash(position?.unrealizedPnl)}</strong></span>
           <span>Source <strong>IBKR / local overlay</strong></span>
         </div>
       )}
@@ -273,13 +352,20 @@ function StatusDot({ label, value }) {
   );
 }
 
-function PositionsTable({ rows, selected, onSelect }) {
+function PositionsTable({ rows, selected, onSelect, summary }) {
   function positionText(row) {
-    const position = number(row.position);
-    const target = number(row.target);
-    if (position !== target) return `${compact(position, 0)} → ${compact(target, 0)}`;
-    return compact(position, 0);
+    const position = hasNumber(row.position) ? number(row.position) : null;
+    const target = hasNumber(row.target) ? number(row.target) : null;
+    if (position === null && target === null) return "-";
+    if (target === null) return compact(position, 0);
+    if (position === null) return `- → ${compact(target, 0)}`;
+    return `${compact(position, 0)} → ${compact(target, 0)}`;
   }
+
+  const unrealizedTotal = hasNumber(summary?.unrealizedPnlEstimate)
+    ? number(summary.unrealizedPnlEstimate)
+    : rows.reduce((sum, row) => sum + number(row.unrealizedPnl), 0);
+  const missingPnl = number(summary?.unrealizedPnlMissingCount, 0);
 
   return (
     <div className="positions-panel">
@@ -302,23 +388,30 @@ function PositionsTable({ rows, selected, onSelect }) {
         </thead>
         <tbody>
           {rows.map((row) => (
-            <tr key={row.instrument} className={row.instrument === selected ? "active-row" : ""} onClick={() => onSelect(row.instrument)}>
+            <tr key={row.instrument} className={row.instrument === selected ? "active-row" : ""} title={rowStatusTitle(row)} onClick={() => onSelect(row.instrument)}>
               <td><b>{row.instrument}</b><small>{row.localSymbol}</small></td>
-              <td className={number(row.position) !== number(row.target) ? "target-diff" : ""}>{positionText(row)}</td>
-              <td className={directionClass(row.direction)}>{row.direction}</td>
-              <td>{compact(row.lastPrice, 4)}</td>
-              <td>{compact(row.forecast, 2)}</td>
-              <td className={number(row.unrealizedPnl) >= 0 ? "positive" : "negative"}>{money(row.unrealizedPnl, 0)}</td>
-              <td>{pct(row.unrealizedPctNav)}</td>
-              <td>{compact(row.avgEntry, 4)}</td>
+              <td className={hasNumber(row.target) && number(row.position) !== number(row.target) ? "target-diff" : ""}>{positionText(row)}</td>
+              <td>
+                <span className={directionClass(row.direction)}>{row.direction}</span>
+                {isLocked(row) && <small className="lock-note">Locked</small>}
+                {isExitOnly(row) && <small className="exit-only-note">Exit only</small>}
+              </td>
+              <td>{compactOrDash(row.lastPrice, 4)}</td>
+              <td>
+                {compactOrDash(row.forecast, 2)}
+                {forecastNote(row) && <small className="forecast-note">{forecastNote(row)}</small>}
+              </td>
+              <td className={hasNumber(row.unrealizedPnl) ? (number(row.unrealizedPnl) >= 0 ? "positive" : "negative") : "muted"}>{moneyOrDash(row.unrealizedPnl, 0)}</td>
+              <td>{pctOrDash(row.unrealizedPctNav)}</td>
+              <td>{compactOrDash(row.avgEntry, 4)}</td>
             </tr>
           ))}
         </tbody>
         <tfoot>
           <tr>
             <td>Total</td><td colSpan="4" />
-            <td className="positive">{money(rows.reduce((sum, row) => sum + number(row.unrealizedPnl), 0), 0)}</td>
-            <td colSpan="2">P&L estimated from local marks</td>
+            <td className={unrealizedTotal >= 0 ? "positive" : "negative"}>{money(unrealizedTotal, 0)}</td>
+            <td colSpan="2">{missingPnl ? `Partial IB P&L (${compact(missingPnl, 0)} missing)` : "P&L from IB portfolio snapshot"}</td>
           </tr>
         </tfoot>
       </table>
@@ -473,6 +566,11 @@ export function App() {
             <StatusDot label={status.tradingGate === "PASS" ? "Remaining Actionable" : "Blocked Target Deltas"} value={compact(status.remainingActionableOrders, 0)} />
             <StatusDot label="Open / held attempts" value={compact(status.openOrders, 0)} />
             <StatusDot label="Filled contracts" value={compact(status.filledToday, 0)} />
+            <StatusDot label="Broker submissions" value={compact(status.brokerSubmissionCount, 0)} />
+            <StatusDot
+              label="Unresolved sends"
+              value={status.brokerSubmissionUnresolved ? `${compact(status.brokerSubmissionUnresolved, 0)} BLOCKED` : "0"}
+            />
           </section>
           <section>
             <h2>Risk Summary</h2>
@@ -492,7 +590,7 @@ export function App() {
 
       <section className="lower-grid">
         <div>
-          <PositionsTable rows={data.positions} selected={selectedPosition?.instrument} onSelect={setSelected} />
+          <PositionsTable rows={data.positions} selected={selectedPosition?.instrument} onSelect={setSelected} summary={summary} />
           <OrdersPanel orders={data.orders} />
         </div>
         <div className="selected-panel">
@@ -502,14 +600,18 @@ export function App() {
               <h2>{selectedPosition?.instrument}</h2>
             </div>
             <strong>{compact(selectedPosition?.lastPrice, 4)}</strong>
-            <em className={directionClass(selectedPosition?.direction)}>{selectedPositionText} {selectedPosition?.direction}</em>
+            <em className={directionClass(selectedPosition?.direction)} title={rowStatusTitle(selectedPosition)}>
+              {selectedPositionText} {selectedPosition?.direction}
+              {isLocked(selectedPosition) && <small className="lock-note">Locked</small>}
+              {isExitOnly(selectedPosition) && <small className="exit-only-note">Exit only</small>}
+            </em>
             <div>
               <span>Avg Entry</span>
-              <b>{compact(selectedPosition?.avgEntry, 4)}</b>
+              <b>{compactOrDash(selectedPosition?.avgEntry, 4)}</b>
             </div>
             <div>
               <span>Unrealized P&L</span>
-              <b className={number(selectedPosition?.unrealizedPnl) >= 0 ? "positive" : "negative"}>{money(selectedPosition?.unrealizedPnl, 0)} ({pct(selectedPosition?.unrealizedPctNav)})</b>
+              <b className={hasNumber(selectedPosition?.unrealizedPnl) ? (number(selectedPosition?.unrealizedPnl) >= 0 ? "positive" : "negative") : "muted"}>{moneyOrDash(selectedPosition?.unrealizedPnl, 0)} ({pctOrDash(selectedPosition?.unrealizedPctNav)})</b>
             </div>
           </div>
           <InstrumentChart instrument={selectedPosition?.instrument} series={series} position={selectedPosition} orders={data.orders} />

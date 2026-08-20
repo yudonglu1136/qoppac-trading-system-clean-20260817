@@ -149,6 +149,10 @@ button {
   color: var(--negative) !important;
 }
 
+.muted {
+  color: var(--muted) !important;
+}
+
 .long,
 .long-text {
   color: var(--long) !important;
@@ -419,10 +423,26 @@ footer {
 .lower-grid > div:first-child {
   border-right: 1px solid var(--line);
   padding: 18px 14px 0 0;
+  overflow: hidden;
 }
 
 .selected-panel {
+  position: relative;
+  z-index: 1;
   padding: 18px 0 0 18px;
+  overflow: hidden;
+  background: var(--panel);
+}
+
+.positions-panel {
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+}
+
+.positions-panel table {
+  min-width: 780px;
 }
 
 .panel-heading {
@@ -475,6 +495,39 @@ td small {
   max-width: 118px;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.lock-note,
+.exit-only-note,
+.forecast-note {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: fit-content;
+  min-width: 44px;
+  max-width: 72px;
+  margin-left: auto;
+  padding: 1px 6px;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  background: #f8fafc;
+  color: #526070;
+  font-size: 9px;
+  font-weight: 760;
+  line-height: 1.35;
+  text-transform: uppercase;
+}
+
+.forecast-note {
+  color: #7a4a06;
+  border-color: #f1c46d;
+  background: #fff8e7;
+}
+
+.exit-only-note {
+  color: #8a3f06;
+  border-color: #e5a75b;
+  background: #fff4df;
 }
 
 .target-diff {
@@ -550,6 +603,11 @@ tfoot td {
   text-transform: uppercase;
 }
 
+.selected-heading em .lock-note {
+  display: flex;
+  margin: 5px 0 0;
+}
+
 .selected-heading b {
   display: block;
   margin-top: 5px;
@@ -564,6 +622,8 @@ tfoot td {
 
 .instrument-chart {
   position: relative;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .detail-chart {
